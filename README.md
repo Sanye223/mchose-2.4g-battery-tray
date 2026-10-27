@@ -134,6 +134,7 @@ tkvenv\Scripts\python -m PyInstaller --noconfirm --clean "2.4G电量托盘.spec"
 
 ## 🙏 致谢
 
+- [marsuyone/mchose-battery-tray](https://github.com/marsuyone/mchose-battery-tray) —— **本项目的起点**。A7 电量协议（`0x11` + `0x06`、65 字节 XOR 帧、65 字节必须补满否则 err 87）即来自它对迈从官方网页驱动（WebHID）的逆向，本项目在其电量协议之上扩展出了面板、记录与 DPI 切换
 - [FerrisPulse](https://github.com/Ferris-echo/FerrisPulse) —— 配置通道框架与 A5 V2 协议参考
 - [hidapi](https://github.com/libusb/hidapi) · [pystray](https://github.com/moses-palmer/pystray) · [Pillow](https://github.com/python-pillow/Pillow)
 
