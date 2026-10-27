@@ -1,6 +1,10 @@
 # MCHOSE 2.4G 电量托盘
 
 <p align="center">
+  <b>简体中文</b> | <a href="README.en.md">English</a> | <a href="README.ja.md">日本語</a>
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4" alt="Windows 10/11">
   <img src="https://img.shields.io/badge/python-3.13+-3776AB" alt="Python 3.13+">
   <img src="https://img.shields.io/badge/protocol-HID%20vendor%20page%200xFF01-8A2BE2" alt="HID">
