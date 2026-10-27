@@ -1,7 +1,7 @@
 # MCHOSE 2.4G 电量托盘
 
 <p align="center">
-  <b>简体中文</b> | <a href="README.en.md">English</a> | <a href="README.ja.md">日本語</a>
+  <b>简体中文</b> | <a href="README.en.md">English</a> | <a href="README.ja.md">日本語</a> | <a href="README.es.md">Español</a> | <a href="README.ru.md">Русский</a>
 </p>
 
 <p align="center">
