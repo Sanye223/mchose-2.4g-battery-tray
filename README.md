@@ -79,6 +79,20 @@ tkvenv\Scripts\python -m PyInstaller --noconfirm --clean "2.4G电量托盘.spec"
 2.4G电量托盘.exe --interval 10  :: 临时覆盖刷新间隔
 ```
 
+## 🖱 DPI 档位适配
+
+右键托盘图标 → **DPI 档位**，六档直接显示实际数值（400 ~ 26000），当前档位单选打点，点一下即写回鼠标板载配置：
+
+![DPI 档位菜单](docs/dpi-menu.png)
+
+托盘悬停提示同步显示当前生效的 DPI。档位判定跟随连接方式：有线模式读 USB 通道，无线模式读 2.4G 通道；X / Y 灵敏度设置不同时会显示成 `800/400`：
+
+![DPI 悬停提示](docs/dpi-tooltip.png)
+
+**切档流程**：读取板载配置（带命令字校验与全零回显过滤）→ 按 A7 Pro 写帧格式回写 → 睡 250ms 读回校验「档位生效 + 档位表完好」→ 刷新菜单与悬停提示。全过程约 1 秒，任何一步失败都会写日志并保留原配置，不会静默写坏档位表。
+
+> A7 Pro 的写帧布局与读取帧**不同构**，直接回写读取帧会整表错位写坏——这也是本仓库与 FerrisPulse 实现的关键差异，详见 [docs/PROTOCOL.md](docs/PROTOCOL.md)。
+
 ## 🗂 数据位置
 
 所有数据在 `%APPDATA%\MchoseBattery\`：
