@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/verified%20on-MCHOSE%20A7%20Pro-orange" alt="A7 Pro">
 </p>
 
-**ベンダー専用ソフトに依存しない** Windows 常駐トレイアプリです。タスクトレイに MCHOSE ワイヤレスマウスの電池残量を常に表示し、DPI 段階の直接切り替えや、すべての電池変化の記録に対応しています。通信はすべて公式ファームウェアのベンダー独自 HID チャンネルを使うため、MCHOSE Center のインストールは不要です。
+**ベンダー専用ソフトに依存しない** Windows 常駐トレイアプリです。タスクトレイに MCHOSE ワイヤレスマウスの電池残量を常に表示し、DPI 段階の直接切り替えや、すべての電池変化の記録に対応しています。通信はすべて公式ファームウェアのベンダー独自 HID チャンネルを使うため、MCHOSE M HUB のインストールは不要です。
 
 <p align="center">
   <img src="docs/panel-dark.png" width="360" alt="ダークパネル">

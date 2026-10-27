@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/verified%20on-MCHOSE%20A7%20Pro-orange" alt="A7 Pro">
 </p>
 
-A Windows tray application that **works without the vendor suite**: it permanently displays the battery level of your MCHOSE wireless mouse in the taskbar notification area, supports switching DPI stages directly, and records every battery change. All communication goes through the vendor-defined HID channel of the official firmware — MCHOSE Center is not required.
+A Windows tray application that **works without the vendor suite**: it permanently displays the battery level of your MCHOSE wireless mouse in the taskbar notification area, supports switching DPI stages directly, and records every battery change. All communication goes through the vendor-defined HID channel of the official firmware — MCHOSE M HUB is not required.
 
 <p align="center">
   <img src="docs/panel-dark.png" width="360" alt="dark panel">

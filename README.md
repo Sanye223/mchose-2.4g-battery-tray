@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/verified%20on-MCHOSE%20A7%20Pro-orange" alt="A7 Pro">
 </p>
 
-一个**不依赖厂商套件**的 Windows 托盘程序：在任务栏通知区域常驻显示迈从（MCHOSE）无线鼠标的电量，并支持直接切换 DPI 档位、记录每一次电量变化。所有通信都走官方固件的厂商自定义 HID 通道，无需安装 MCHOSE Center。
+一个**不依赖厂商套件**的 Windows 托盘程序：在任务栏通知区域常驻显示迈从（MCHOSE）无线鼠标的电量，并支持直接切换 DPI 档位、记录每一次电量变化。所有通信都走官方固件的厂商自定义 HID 通道，无需安装 MCHOSE M HUB。
 
 <p align="center">
   <img src="docs/panel-dark.png" width="360" alt="深色面板">

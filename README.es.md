@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/verified%20on-MCHOSE%20A7%20Pro-orange" alt="A7 Pro">
 </p>
 
-Una aplicación de bandeja para Windows que **no depende del software del fabricante**: muestra de forma permanente el nivel de batería de tu ratón inalámbrico MCHOSE en el área de notificación de la barra de tareas, permite cambiar directamente los niveles de DPI y registra cada cambio de batería. Toda la comunicación se realiza a través del canal HID personalizado del firmware oficial, por lo que no es necesario instalar MCHOSE Center.
+Una aplicación de bandeja para Windows que **no depende del software del fabricante**: muestra de forma permanente el nivel de batería de tu ratón inalámbrico MCHOSE en el área de notificación de la barra de tareas, permite cambiar directamente los niveles de DPI y registra cada cambio de batería. Toda la comunicación se realiza a través del canal HID personalizado del firmware oficial, por lo que no es necesario instalar MCHOSE M HUB.
 
 <p align="center">
   <img src="docs/panel-dark.png" width="360" alt="panel oscuro">
