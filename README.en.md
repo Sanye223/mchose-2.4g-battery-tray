@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/python-3.13+-3776AB" alt="Python 3.13+">
   <img src="https://img.shields.io/badge/protocol-HID%20vendor%20page%200xFF01-8A2BE2" alt="HID">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
-  <a href="https://github.com/Sanye223/mchose-2.4g-battery-tray/releases"><img src="https://img.shields.io/badge/release-v1.0.0-blue" alt="release v1.0.0"></a>
+  <a href="https://github.com/Sanye223/mchose-2.4g-battery-tray/releases"><img src="https://img.shields.io/badge/release-v1.0.1-blue" alt="release v1.0.1"></a>
   <img src="https://img.shields.io/badge/verified%20on-MCHOSE%20A7%20Pro-orange" alt="A7 Pro">
 </p>
 
