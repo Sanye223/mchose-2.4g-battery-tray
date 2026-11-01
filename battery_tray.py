@@ -1545,6 +1545,12 @@ def main() -> int:
         except Exception:
             interval = None
 
+    # 新机器上 %APPDATA%\MchoseBattery 不存在，logging.basicConfig 直接写日志会崩（Errno 2）
+    try:
+        os.makedirs(CFG_DIR, exist_ok=True)
+    except Exception:
+        pass
+
     if not acquire_single_instance():
         log("已有实例在跑，本次退出")
         return 0  # 已经有实例在跑
