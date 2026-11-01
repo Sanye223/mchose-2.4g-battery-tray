@@ -128,6 +128,9 @@ Al conectar el cable, el ratón cambia a modo con cable (otro PID); el programa 
 **P: Cambié el DPI pero no surte efecto en el juego**
 Comprueba que el registro diga "已切换到 XXX DPI". Algunos motores de juego guardan en caché la configuración del ratón: reiniciar el juego lo resuelve.
 
+**P: No aparece el icono en la bandeja**
+Comprueba primero en el Administrador de tareas que `2.4G电量托盘.exe` se esté ejecutando. Windows guarda por defecto los iconos nuevos en el área de desbordamiento: haz clic en la flecha «^» junto al reloj. Para fijarlo: Configuración → Personalización → Barra de tareas → Otros iconos de la bandeja del sistema → activa el interruptor (Windows 10: Configuración de la barra de tareas → Selecciona los iconos que aparecen en la barra de tareas).
+
 ## 🧪 Compatibilidad
 
 | Dispositivo | Estado |
