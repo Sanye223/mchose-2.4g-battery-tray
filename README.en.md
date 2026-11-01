@@ -128,6 +128,9 @@ Plugging in the cable switches the mouse to wired mode (different PID); the prog
 **Q: Switched DPI but nothing changed in my game?**
 Check the log for "已切换到 XXX DPI". Some game engines cache mouse settings — restarting the game resolves it.
 
+**Q: The tray icon doesn't show up?**
+First check Task Manager for a running `2.4G电量托盘.exe`. Windows parks new tray icons in the overflow flyout by default: click the "^" arrow near the clock to see it. To keep it visible, go to Settings → Personalization → Taskbar → Other system tray icons and enable the switch (Windows 10: Taskbar settings → Select which icons appear on the taskbar).
+
 ## 🧪 Compatibility
 
 | Device | Status |
