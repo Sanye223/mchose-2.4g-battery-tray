@@ -281,24 +281,26 @@ def physical_scale() -> float:
     try:
         import ctypes
 
-        from PIL import ImageGrab
-
-        u = ctypes.windll.user32
-        vw, vh = u.GetSystemMetrics(78), u.GetSystemMetrics(79)  # SM_CX/YVIRTUALSCREEN
-        if vw > 0 and vh > 0:
-            shot = ImageGrab.grab(all_screens=True)
-            sx, sy = shot.width / vw, shot.height / vh
-            if 0.9 <= sx <= 4.0 and abs(sx - sy) < 0.05:
-                scale = sx
+        # 进程声明了 DPI 感知后这个 API 才说真话（125% -> 120）；优先信它。
+        dpi = int(ctypes.windll.user32.GetDpiForSystem())
+        if dpi > 96:
+            scale = dpi / 96.0
     except Exception:
         pass
     if scale == 1.0:
+        # 仍旧 DPI-unaware（API 被虚拟化成 96）时，改用两套坐标系相除反推。
         try:
             import ctypes
 
-            dpi = int(ctypes.windll.user32.GetDpiForSystem())
-            if dpi > 96:
-                scale = dpi / 96.0
+            from PIL import ImageGrab
+
+            u = ctypes.windll.user32
+            vw, vh = u.GetSystemMetrics(78), u.GetSystemMetrics(79)  # SM_CX/YVIRTUALSCREEN
+            if vw > 0 and vh > 0:
+                shot = ImageGrab.grab(all_screens=True)
+                sx, sy = shot.width / vw, shot.height / vh
+                if 0.9 <= sx <= 4.0 and abs(sx - sy) < 0.05:
+                    scale = sx
         except Exception:
             pass
     _SCALE_CACHE = scale

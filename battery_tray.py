@@ -61,6 +61,52 @@ def log(msg: str) -> None:
         pass
 
 
+def ensure_dpi_aware() -> None:
+    """让窗口按物理像素绘制。
+
+    exe 默认 DPI-unaware：Windows 会先把窗口渲染成较小的位图再整体放大到 125%，
+    所有文字因此二次插值发虚（2K@125% 尤其明显）。声明 per-monitor V2 后，
+    坐标与像素 1:1，文字锐利；UI 再按 physical_scale() 等比放大保持原视觉尺寸。
+    必须在创建任何窗口之前调用；重复调用会失败但无害。
+    """
+    try:
+        import ctypes
+
+        u = ctypes.windll.user32
+        # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 == (void*)-4
+        if u.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
+            return
+    except Exception:
+        pass
+    try:
+        import ctypes
+
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PER_MONITOR_AWARE（Win8.1+）
+        return
+    except Exception:
+        pass
+    try:
+        import ctypes
+
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
+
+def is_dpi_aware() -> bool:
+    """DPI 感知生效时 GetDpiForSystem 才说真话（125% -> 120）；unaware 恒为 96。
+
+    若设置失败（旧系统 / 被 manifest 锁死），UI 必须维持 1:1 逻辑绘制，
+    否则会「先按 k 放大、再被系统拉伸 k 倍」变成双倍大小。
+    """
+    try:
+        import ctypes
+
+        return bool(ctypes.windll.user32.GetDpiForSystem() > 96)
+    except Exception:
+        return False
+
+
 # --------------------------------------------------------------------- 电量变化记录
 HISTORY_PATH = os.path.join(CFG_DIR, "history.json")
 MAX_HISTORY = 800                 # 约几百次变化，够看几个月
@@ -247,7 +293,8 @@ class Panel:
         self._refreshing = False
         self._visible = False
         self._shown_at = 0.0
-        self._pos = None          # 卡片左上角（屏幕坐标）
+        self._pos = None          # 卡片左上角（屏幕坐标，DPI-aware 后是物理像素）
+        self.k = 1.0              # 真实缩放系数，_main 里按 physical_scale() 赋值
         self._bg_photo = None     # 高斯模糊后的背景位图
         self._btn_close = (0, 0, 0, 0)
         self._btn_refresh = (0, 0, 0, 0)
@@ -290,6 +337,9 @@ class Panel:
             log("面板线程启动超时")
 
     def _main(self) -> None:
+        # 面板走的是独立线程，这里再兜一次，保证直接用本模块弹面板时也是 DPI-aware
+        ensure_dpi_aware()
+        self.k = physical_scale() if is_dpi_aware() else 1.0
         try:
             import tkinter as tk
             from tkinter import font as tkfont
@@ -359,39 +409,42 @@ class Panel:
             return
 
         x, y = self._pos
+        PW = int(round(self.W * self.k))
+        PH = int(round(self.H * self.k))
         try:
             import ctypes
 
             u = ctypes.windll.user32
-            vx, vy = u.GetSystemMetrics(76), u.GetSystemMetrics(77)  # 虚拟屏左上角（逻辑）
-            vw, vh = u.GetSystemMetrics(78), u.GetSystemMetrics(79)  # 虚拟屏尺寸（逻辑）
+            vx, vy = u.GetSystemMetrics(76), u.GetSystemMetrics(77)  # 虚拟屏左上角
+            vw, vh = u.GetSystemMetrics(78), u.GetSystemMetrics(79)  # 虚拟屏尺寸
         except Exception:
             vx = vy = 0
             vw = vh = 0
 
         try:
-            # 一次抓全屏：既是亚克力底图，也用来反推真实缩放比（不能信 GetDpiForSystem）。
+            # 一次抓全屏：既是亚克力底图，也用来兜底反推缩放比（DPI-aware 时为 1.0）。
             full = ImageGrab.grab(all_screens=True)
             if vw > 0 and vh > 0:
                 sx, sy = full.width / vw, full.height / vh
                 if not (0.9 <= sx <= 4.0 and abs(sx - sy) < 0.05):
-                    sx = sy = physical_scale()
+                    sx = sy = 1.0
             else:
-                sx = sy = physical_scale()
+                sx = sy = 1.0
 
             x0 = int(round((x - vx) * sx))
             y0 = int(round((y - vy) * sy))
-            x1 = int(round((x + self.W - vx) * sx))
-            y1 = int(round((y + self.H - vy) * sy))
+            x1 = int(round((x + PW - vx) * sx))
+            y1 = int(round((y + PH - vy) * sy))
             # 贴屏幕右下角时四舍五入可能越界，夹紧后再裁，避免 PIL 补黑边
             x0 = max(0, min(full.width - 1, x0))
             y0 = max(0, min(full.height - 1, y0))
             x1 = max(x0 + 1, min(full.width, x1))
             y1 = max(y0 + 1, min(full.height, y1))
 
+            # 底图按物理像素 1:1 生成（不再缩小再被系统拉伸），毛玻璃同样更干净
             shot = full.crop((x0, y0, x1, y1)).convert("RGBA").resize(
-                (self.W, self.H), Image.LANCZOS)
-            shot = shot.filter(ImageFilter.GaussianBlur(18))
+                (PW, PH), Image.LANCZOS)
+            shot = shot.filter(ImageFilter.GaussianBlur(18 * self.k))
             shot = Image.alpha_composite(shot, Image.new("RGBA", shot.size, self._colors()["tint"]))
             buf = io.BytesIO()
             shot.convert("RGB").save(buf, format="PNG")
@@ -435,8 +488,11 @@ class Panel:
     def _build(self, tk, tkfont) -> None:
         c = self._colors()
         root = self._root
+        k = self.k
+        px = lambda v: int(round(v * k))
         root.configure(bg=c["bg"])
-        cv = tk.Canvas(root, width=self.W, height=self.H, bg=c["bg"],
+        # DPI-aware 下 canvas 尺寸就是物理像素，按 k 放大，文字/位图才不会被系统拉伸发虚
+        cv = tk.Canvas(root, width=px(self.W), height=px(self.H), bg=c["bg"],
                        highlightthickness=0, bd=0, takefocus=0)
         cv.pack()
         self._cv = cv
@@ -445,28 +501,28 @@ class Panel:
 
         # Fluent 字阶（负数 = 像素字号）：Body Strong 14 / Caption 12 / 大数字 48
         # 中文用微软雅黑（只有常规/粗体，粗体顶替 semibold），数字走 Segoe UI Variable
-        self._f["name"] = self._pick(tkfont, ("Microsoft YaHei UI", "微软雅黑", "Segoe UI"), -14, "bold")
-        self._f["sub"] = self._pick(tkfont, ("Microsoft YaHei UI", "微软雅黑", "Segoe UI"), -12)
-        self._f["unit"] = self._pick(tkfont, ("Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI"), -12)
-        self._f["btn"] = self._pick(tkfont, ("Microsoft YaHei UI", "微软雅黑", "Segoe UI"), -12)
-        self._f["chip"] = self._pick(tkfont, ("Microsoft YaHei UI", "微软雅黑", "Segoe UI"), -12)
+        self._f["name"] = self._pick(tkfont, ("Microsoft YaHei UI", "微软雅黑", "Segoe UI"), -px(14), "bold")
+        self._f["sub"] = self._pick(tkfont, ("Microsoft YaHei UI", "微软雅黑", "Segoe UI"), -px(12))
+        self._f["unit"] = self._pick(tkfont, ("Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI"), -px(12))
+        self._f["btn"] = self._pick(tkfont, ("Microsoft YaHei UI", "微软雅黑", "Segoe UI"), -px(12))
+        self._f["chip"] = self._pick(tkfont, ("Microsoft YaHei UI", "微软雅黑", "Segoe UI"), -px(12))
 
         try:
             fams = set(tkfont.families(self._root))
         except Exception:
             fams = set()
         if "Segoe UI Variable Display Semibold" in fams:   # 规范：标题用 semibold 不用 bold
-            self._f["num"] = tkfont.Font(self._root, family="Segoe UI Variable Display Semibold", size=-48)
+            self._f["num"] = tkfont.Font(self._root, family="Segoe UI Variable Display Semibold", size=-px(48))
         elif "Segoe UI Variable Display" in fams:
-            self._f["num"] = tkfont.Font(self._root, family="Segoe UI Variable Display", size=-48)
+            self._f["num"] = tkfont.Font(self._root, family="Segoe UI Variable Display", size=-px(48))
         else:
-            self._f["num"] = tkfont.Font(self._root, family="Segoe UI", size=-48, weight="bold")
+            self._f["num"] = tkfont.Font(self._root, family="Segoe UI", size=-px(48), weight="bold")
 
         # Segoe Fluent Icons 图标字体（关闭 ✕ / 刷新 ⟳），没有就退化到手绘线条
         self._icon_font = None
         for fam in ("Segoe Fluent Icons", "Segoe MDL2 Assets"):
             if fam in fams:
-                self._icon_font = tkfont.Font(self._root, family=fam, size=-11)
+                self._icon_font = tkfont.Font(self._root, family=fam, size=-px(11))
                 break
 
         # 按钮用坐标命中：常态不画底，hover 才出底色，浮在毛玻璃上更干净
@@ -477,7 +533,10 @@ class Panel:
 
     # -------------------------------------------------- 圆角 / 图片工具
     def _rrect_photo(self, w, h, r, fill, outline=None):
-        """生成抗锯齿的圆角矩形位图（w×h），fill/outline 可为 None。"""
+        """生成抗锯齿的圆角矩形位图；入参是逻辑尺寸，内部按 k 生成物理像素。"""
+        w = int(round(w * self.k))
+        h = int(round(h * self.k))
+        r = r * self.k
         key = ("rr", w, h, r, fill, outline)
         cached = self._photos.get(key)
         if cached is not None:
@@ -527,7 +586,8 @@ class Panel:
             import base64
             import io
 
-            img = mouse_art(30, 41, color, pct, ss=6)
+            img = mouse_art(int(round(30 * self.k)), int(round(41 * self.k)),
+                            color, pct, ss=6)
             buf = io.BytesIO()
             img.save(buf, format="PNG")
             photo = self._tk.PhotoImage(data=base64.b64encode(buf.getvalue()).decode("ascii"))
@@ -539,7 +599,8 @@ class Panel:
 
     def _bolt_badge_photo(self, size: int, bg_color: str, bolt_color: str):
         """充电角标：实心小圆 + 闪电（PIL 4x 超采样，边缘干净）。"""
-        key = ("bolt_badge", size, bg_color, bolt_color)
+        out = int(round(size * self.k))
+        key = ("bolt_badge", size, out, bg_color, bolt_color)
         if key in self._photos:
             return self._photos[key]
         try:
@@ -549,14 +610,14 @@ class Panel:
             from PIL import Image, ImageDraw
 
             ss = 4
-            S = size * ss
+            S = out * ss
             img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
             d = ImageDraw.Draw(img)
             d.ellipse((ss // 2, ss // 2, S - ss // 2, S - ss // 2),
                       fill=bg_color, outline=bg_color, width=ss)
             d.polygon(_bolt_poly(S / 2, S / 2, S * 0.52), fill=bolt_color)
             buf = io.BytesIO()
-            img.resize((size, size), Image.LANCZOS).save(buf, format="PNG")
+            img.resize((out, out), Image.LANCZOS).save(buf, format="PNG")
             photo = self._tk.PhotoImage(data=base64.b64encode(buf.getvalue()).decode("ascii"))
         except Exception:
             log(f"充电角标生成失败：{traceback.format_exc(limit=2)}")
@@ -618,21 +679,23 @@ class Panel:
         else:
             for dx0, dy0, dx1, dy1 in ((-4, -4, 4, 4), (-4, 4, 4, -4)):
                 cv.create_line(mx + dx0, my + dy0, mx + dx1, my + dy1,
-                               fill=c["sub"], width=2, capstyle="round")
+                               fill=c["sub"], width=max(1, int(round(2 * self.k))),
+                               capstyle="round")
 
         # —— 电量数字（Display 48 半粗）+ 单位（Caption 12）
         text = "--" if pct is None else str(pct)
         num_y = 76
         cv.create_text(M, num_y, text=text, font=self._f["num"], anchor="nw",
                        fill=c["warn"] if low else c["fg"])
-        cv.create_text(M + self._f["num"].measure(text) + 6, num_y + 40, text="%",
+        # 字体已按 k 放大，measure 返回物理像素；换算回逻辑坐标再参与排版
+        cv.create_text(M + self._f["num"].measure(text) / self.k + 6, num_y + 40, text="%",
                        font=self._f["unit"], anchor="nw", fill=c["sub"])
 
         # —— 状态标签（4px 圆角，Caption 12，右对齐）
         chip = app.status or "读取中"
         cf = self._f["chip"]
         ch_h = 24
-        chip_w = cf.measure(chip) + 24
+        chip_w = cf.measure(chip) / self.k + 24
         cx1, cy0 = self.W - M, 98
         cx0 = cx1 - chip_w
         bg = c["chip"] if pct is None else (c["soft_warn"] if low else c["soft"])
@@ -654,7 +717,7 @@ class Panel:
         drop = getattr(app, "last_drop", None)
         if drop:
             extra = f" · 掉电 {drop['t'][11:]}"
-            if self._f["sub"].measure(foot + extra) < 200:   # 别压到刷新按钮
+            if self._f["sub"].measure(foot + extra) / self.k < 200:   # 别压到刷新按钮
                 foot += extra
         cv.create_text(M, 194, anchor="nw", fill=c["sub"], font=self._f["sub"], text=foot)
 
@@ -677,6 +740,11 @@ class Panel:
             cv.create_text((rx0 + rx1) / 2, cy, text=label,
                            font=self._f["btn"], fill=c["fg"])
 
+        # 绘制全程用逻辑坐标，最后统一放大到物理像素。字体与位图已按 k 生成，
+        # 所以这一步只缩放 item 坐标，不会二次插值——文字保持 1:1 锐利。
+        if abs(self.k - 1.0) > 1e-6:
+            cv.scale("all", 0, 0, self.k, self.k)
+
     # -------------------------------------------------- 交互
     def _hit(self, x: int, y: int) -> str:
         for tag, box in (("close", self._btn_close), ("refresh", self._btn_refresh)):
@@ -686,10 +754,10 @@ class Panel:
         return ""
 
     def _on_motion(self, event) -> None:
-        self._set_hover(self._hit(event.x, event.y))
+        self._set_hover(self._hit(event.x / self.k, event.y / self.k))
 
     def _on_click(self, event) -> None:
-        tag = self._hit(event.x, event.y)
+        tag = self._hit(event.x / self.k, event.y / self.k)
         if tag == "close":
             self._hide()
         elif tag == "refresh":
@@ -724,6 +792,8 @@ class Panel:
             self._hist_win = None
 
         # Fluent 排版：标题 Title 20px semibold；记录卡片比底色浮起一层（layering）
+        k = self.k
+        px = lambda v: int(round(v * k))
         card = "#2A2A2A" if not self.app.light_taskbar else "#FAFAFA"
         if "title" not in self._f:
             try:
@@ -732,10 +802,10 @@ class Panel:
                 fams = set()
             if "Segoe UI Variable Display Semibold" in fams:
                 self._f["title"] = self._tkfont.Font(
-                    self._root, family="Segoe UI Variable Display Semibold", size=-20)
+                    self._root, family="Segoe UI Variable Display Semibold", size=-px(20))
             else:
                 self._f["title"] = self._pick(
-                    self._tkfont, ("Microsoft YaHei UI", "微软雅黑", "Segoe UI"), -20, "bold")
+                    self._tkfont, ("Microsoft YaHei UI", "微软雅黑", "Segoe UI"), -px(20), "bold")
 
         try:
             import base64
@@ -747,14 +817,15 @@ class Panel:
             top.title(f"电量记录 · {who}")
             top.configure(bg=c["bg"])
             sw, sh = top.winfo_screenwidth(), top.winfo_screenheight()
-            top.geometry(f"460x540+{(sw - 460) // 2}+{max(40, (sh - 540) // 2 - 60)}")
-            top.minsize(380, 360)
+            ww, wh = px(460), px(540)
+            top.geometry(f"{ww}x{wh}+{(sw - ww) // 2}+{max(px(40), (sh - wh) // 2 - px(60))}")
+            top.minsize(px(380), px(360))
 
             # 窗口图标：用当前托盘图标实时渲染一张，替代 tkinter 默认羽毛
             try:
                 img = render_icon(self.app.percent, self.app.cfg.get("style", "mouse"),
                                   self.app.light_taskbar, int(self.app.cfg.get("low", 20)),
-                                  size=32)
+                                  size=px(32))
                 buf = io.BytesIO()
                 img.save(buf, format="PNG")
                 self._hist_icon_photo = tk.PhotoImage(
@@ -783,25 +854,25 @@ class Panel:
 
             # —— 头部：Title 20 + Caption 12 摘要
             head = tk.Frame(top, bg=c["bg"])
-            head.pack(fill="x", padx=16, pady=(16, 8))
+            head.pack(fill="x", padx=px(16), pady=(px(16), px(8)))
             tk.Label(head, text="电量变化记录", bg=c["bg"], fg=c["fg"],
                      font=self._f["title"], anchor="w").pack(anchor="w")
             self._hist_sum = tk.Label(head, text="", bg=c["bg"], fg=c["sub"],
                                       font=self._f["sub"], anchor="w", justify="left")
-            self._hist_sum.pack(anchor="w", pady=(4, 0))
+            self._hist_sum.pack(anchor="w", pady=(px(4), 0))
 
             # —— 列表卡片：浮起一层（配色分层）+ 1px 描边，滚动条内嵌右缘
             body = tk.Frame(top, bg=c["bg"])
-            body.pack(fill="both", expand=True, padx=16, pady=(8, 0))
+            body.pack(fill="both", expand=True, padx=px(16), pady=(px(8), 0))
             card_bg = "#2A2A2A" if not self.app.light_taskbar else "#FAFAFA"
             card = tk.Frame(body, bg=card_bg, highlightthickness=1,
                             highlightbackground=c["btn_line"], highlightcolor=c["btn_line"])
             card.pack(fill="both", expand=True)
             txt = tk.Text(card, bg=card_bg, fg=c["fg"], bd=0, highlightthickness=0,
-                          padx=12, pady=10, wrap="none", cursor="arrow",
+                          padx=px(12), pady=px(10), wrap="none", cursor="arrow",
                           width=1, height=1,      # 小请求尺寸，靠 pack 扩展；否则会把底部按钮挤成 1px
-                          font=self._f["sub"], spacing1=1, spacing3=4)
-            sb = tk.Scrollbar(card, command=txt.yview, width=10,
+                          font=self._f["sub"], spacing1=px(1), spacing3=px(4))
+            sb = tk.Scrollbar(card, command=txt.yview, width=px(10),
                               bg=c["chip"], troughcolor=card_bg,
                               activebackground=c["hover"], bd=0,
                               activerelief="flat", elementborderwidth=0)
@@ -809,7 +880,7 @@ class Panel:
             sb.pack(side="right", fill="y")
             txt.pack(side="left", fill="both", expand=True)
             txt.tag_configure("day", foreground=c["accent"], font=self._f["name"],
-                              spacing1=14, spacing3=8)
+                              spacing1=px(14), spacing3=px(8))
             # 分列着色：时间灰、掉电行主文字色、充电行淡化；闪电用 Fluent 图标字体
             for name, kw in (
                 ("hm", {"foreground": c["sub"]}),
@@ -824,14 +895,14 @@ class Panel:
                 ("bolt_c", {"foreground": c["accent"], "justify": "center"}),
                 ("empty", {"foreground": c["sub"], "justify": "center"}),
             ):
-                kw.setdefault("spacing3", 5)
+                kw.setdefault("spacing3", px(5))
                 if name == "bolt" and self._icon_font is not None:
                     kw["font"] = self._icon_font
                 txt.tag_configure(name, **kw)
             self._hist_text = txt
 
             # —— 底部按钮：Canvas 自绘 4px 圆角 + Fluent 图标（Win11 次级按钮）
-            bar = tk.Canvas(top, height=56, bg=c["bg"], highlightthickness=0, bd=0)
+            bar = tk.Canvas(top, height=px(56), bg=c["bg"], highlightthickness=0, bd=0)
             bar.pack(fill="x", side="bottom")
             self._hist_bar = bar
             self._hist_btns = {}
@@ -870,7 +941,7 @@ class Panel:
         if bar is None:
             return
         c = self._colors()
-        w = bar.winfo_width()
+        w = bar.winfo_width() / self.k   # 控件给的是物理像素，绘制用逻辑坐标
         if w < 100:
             w = 428            # 窗口未映射完拿不到真实宽度；<Configure> 后会按实际宽度重画
         key = (w, self._hist_hover)
@@ -879,7 +950,7 @@ class Panel:
         self._hist_last_draw = key
         bar.delete("all")
         h = 56
-        bar.configure(height=h)
+        bar.configure(height=int(round(h * self.k)))
         bw, bh = 112, 32
         y0 = (h - bh) // 2
         mx = 16                       # 距窗口边缘 16px，别贴边
@@ -907,6 +978,9 @@ class Panel:
             else:
                 bar.create_text(mx, my, text=label, font=self._f["btn"], fill=c["fg"])
 
+        if abs(self.k - 1.0) > 1e-6:
+            bar.scale("all", 0, 0, self.k, self.k)
+
     def _hist_hit(self, x: int, y: int) -> str:
         for name, (x0, y0, x1, y1) in self._hist_btns.items():
             if x0 <= x <= x1 and y0 <= y <= y1:
@@ -920,10 +994,10 @@ class Panel:
         self._draw_hist_btns()
 
     def _hist_on_motion(self, event) -> None:
-        self._hist_set_hover(self._hist_hit(event.x, event.y))
+        self._hist_set_hover(self._hist_hit(event.x / self.k, event.y / self.k))
 
     def _hist_on_click(self, event) -> None:
-        name = self._hist_hit(event.x, event.y)
+        name = self._hist_hit(event.x / self.k, event.y / self.k)
         if name == "clear":
             self._clear_history()
         elif name == "close":
@@ -1025,9 +1099,11 @@ class Panel:
             right, bottom = rect.right, rect.bottom
         except Exception:
             right, bottom = self._root.winfo_screenwidth(), self._root.winfo_screenheight()
-        w = self._root.winfo_reqwidth()
-        h = self._root.winfo_reqheight()
-        self._pos = (right - w - 14, bottom - h - 14)
+        # DPI-aware 后工作区已是物理像素，窗口尺寸也用物理像素，位置才不会偏移
+        w = int(round(self.W * self.k))
+        h = int(round(self.H * self.k))
+        pad = int(round(14 * self.k))
+        self._pos = (right - w - pad, bottom - h - pad)
         self._root.geometry(f"{w}x{h}+{self._pos[0]}+{self._pos[1]}")
 
     def _show(self) -> None:
@@ -1554,6 +1630,8 @@ class TrayApp:
 
 # --------------------------------------------------------------------- 入口
 def main() -> int:
+    ensure_dpi_aware()
+    log(f"DPI 感知：aware={is_dpi_aware()} scale={physical_scale():.2f}")
     args = sys.argv[1:]
     if "--cli" in args:
         result = mchose_hid.read_battery()
