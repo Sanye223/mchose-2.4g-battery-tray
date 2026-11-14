@@ -257,12 +257,54 @@ def render(percent: int | None, style: str, light_taskbar: bool,
     return mouse_art(S, S, color, percent, ss=1).resize((size, size), Image.LANCZOS)
 
 
-def tray_size() -> int:
-    """任务栏通知区域图标在 100% 缩放下是 16px，按当前 DPI 取准确尺寸，避免发虚。"""
+_SCALE_CACHE: float | None = None
+
+
+def physical_scale() -> float:
+    """「物理像素 ÷ 逻辑坐标」的真实缩放比。
+
+    打包出来的 exe 没有 dpiAware manifest，进程是 DPI-unaware：Windows 会把
+    GetDpiForSystem / GetDpiForMonitor / GetDeviceCaps(LOGPIXELSX) 全部虚拟化成 96，
+    在 2K@125% 的机器上照样谎报 100%（实测：物理 2560x1440、逻辑 2048x1152）。
+    唯一可靠的判据是对比两套坐标系：
+
+        ImageGrab.grab(all_screens=True)      -> 物理像素 2560x1440
+        GetSystemMetrics(SM_CXVIRTUALSCREEN)  -> 逻辑尺寸 2048x1152
+
+    相除得 1.25。若进程本身是 DPI-aware，两者相等，结果自然回落为 1.0。
+    结果缓存：系统缩放不会在进程运行中变化，避免每次重绘图标都抓一次屏。
+    """
+    global _SCALE_CACHE
+    if _SCALE_CACHE is not None:
+        return _SCALE_CACHE
+    scale = 1.0
     try:
         import ctypes
 
-        dpi = int(ctypes.windll.user32.GetDpiForSystem())
+        from PIL import ImageGrab
+
+        u = ctypes.windll.user32
+        vw, vh = u.GetSystemMetrics(78), u.GetSystemMetrics(79)  # SM_CX/YVIRTUALSCREEN
+        if vw > 0 and vh > 0:
+            shot = ImageGrab.grab(all_screens=True)
+            sx, sy = shot.width / vw, shot.height / vh
+            if 0.9 <= sx <= 4.0 and abs(sx - sy) < 0.05:
+                scale = sx
     except Exception:
-        dpi = 96
-    return max(16, min(48, int(round(16 * (dpi or 96) / 96))))
+        pass
+    if scale == 1.0:
+        try:
+            import ctypes
+
+            dpi = int(ctypes.windll.user32.GetDpiForSystem())
+            if dpi > 96:
+                scale = dpi / 96.0
+        except Exception:
+            pass
+    _SCALE_CACHE = scale
+    return scale
+
+
+def tray_size() -> int:
+    """任务栏通知区域图标按真实缩放取整数像素，避免 125%/150% 下发虚。"""
+    return max(16, min(48, int(round(16 * physical_scale()))))

@@ -26,7 +26,7 @@ import traceback
 import pystray
 
 import mchose_hid
-from tray_icon import mouse_art, render as render_icon, tray_size, _bolt_poly
+from tray_icon import mouse_art, render as render_icon, tray_size, _bolt_poly, physical_scale
 
 APP_NAME = "2.4G 电量托盘"
 APP_ID = "MchoseBatteryTray"
@@ -335,17 +335,17 @@ class Panel:
             pass
 
     def _dpi_scale(self) -> float:
-        try:
-            import ctypes
-
-            return max(1.0, ctypes.windll.user32.GetDpiForSystem() / 96.0)
-        except Exception:
-            return 1.0
+        return physical_scale()
 
     def _grab_backdrop(self) -> None:
         """截下卡片要盖住的那块屏幕，高斯模糊后叠一层半透明色，做出 Win11 亚克力观感。
 
         比 DWM 的模糊 API 稳：无边框窗口也能用，深浅主题、任意壁纸都有正确结果。
+
+        DPI 坑：进程是 DPI-unaware，窗口坐标（geometry / 工作区）是「逻辑像素」，
+        而 ImageGrab 抓到的是「物理像素」；两者在 125% 缩放下差 1.25 倍。
+        GetDpiForSystem 在这里会被 Windows 虚拟化成 96（谎报 100%），不能用，
+        所以直接拿这次抓到的全屏尺寸和逻辑虚拟屏尺寸反推比例，再按它裁切。
         """
         self._bg_photo = None
         if self._pos is None or self._tk is None:
@@ -359,13 +359,38 @@ class Panel:
             return
 
         x, y = self._pos
-        s = self._dpi_scale()
         try:
-            shot = ImageGrab.grab(
-                bbox=(int(x * s), int(y * s), int((x + self.W) * s), int((y + self.H) * s)),
-                all_screens=True,
-            )
-            shot = shot.convert("RGBA").resize((self.W, self.H), Image.LANCZOS)
+            import ctypes
+
+            u = ctypes.windll.user32
+            vx, vy = u.GetSystemMetrics(76), u.GetSystemMetrics(77)  # 虚拟屏左上角（逻辑）
+            vw, vh = u.GetSystemMetrics(78), u.GetSystemMetrics(79)  # 虚拟屏尺寸（逻辑）
+        except Exception:
+            vx = vy = 0
+            vw = vh = 0
+
+        try:
+            # 一次抓全屏：既是亚克力底图，也用来反推真实缩放比（不能信 GetDpiForSystem）。
+            full = ImageGrab.grab(all_screens=True)
+            if vw > 0 and vh > 0:
+                sx, sy = full.width / vw, full.height / vh
+                if not (0.9 <= sx <= 4.0 and abs(sx - sy) < 0.05):
+                    sx = sy = physical_scale()
+            else:
+                sx = sy = physical_scale()
+
+            x0 = int(round((x - vx) * sx))
+            y0 = int(round((y - vy) * sy))
+            x1 = int(round((x + self.W - vx) * sx))
+            y1 = int(round((y + self.H - vy) * sy))
+            # 贴屏幕右下角时四舍五入可能越界，夹紧后再裁，避免 PIL 补黑边
+            x0 = max(0, min(full.width - 1, x0))
+            y0 = max(0, min(full.height - 1, y0))
+            x1 = max(x0 + 1, min(full.width, x1))
+            y1 = max(y0 + 1, min(full.height, y1))
+
+            shot = full.crop((x0, y0, x1, y1)).convert("RGBA").resize(
+                (self.W, self.H), Image.LANCZOS)
             shot = shot.filter(ImageFilter.GaussianBlur(18))
             shot = Image.alpha_composite(shot, Image.new("RGBA", shot.size, self._colors()["tint"]))
             buf = io.BytesIO()
